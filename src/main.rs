@@ -90,7 +90,8 @@ fn main() {
         files = _tmp.split("\n").collect();
         files.retain(|x| !x.is_empty());
     } else {
-        println!("no path specified");
+        // errors out and prints help if no arguments are given
+        app.clone().print_help().unwrap();
         return;
     }
 
