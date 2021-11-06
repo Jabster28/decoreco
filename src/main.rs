@@ -4,7 +4,7 @@ use clap::Shell;
 use colored::Colorize;
 use indicatif::{ProgressBar, ProgressStyle};
 use prettytable::{cell, row, Cell, Row, Table};
-use tempfile;
+use tempfile::Builder;
 
 mod cli;
 fn main() {
@@ -146,10 +146,7 @@ fn main() {
             .progress_chars("##-"),
     );
     pb.enable_steady_tick(500);
-    let tmp = tempfile::Builder::new()
-        .prefix("decoreco")
-        .tempdir()
-        .unwrap();
+    let tmp = Builder::new().prefix("decoreco").tempdir().unwrap();
     let mut saved_size: u32 = 0;
     let mut total_size: u32 = 0;
 
