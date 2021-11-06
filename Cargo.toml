@@ -7,7 +7,7 @@ description = "decode and re-encode big media files to save space"
 homepage = "https://github.com/Jabster28/decoreco"
 repository = "https://github.com/Jabster28/decoreco"
 readme = "README.md"
-keywords = ["ffmpeg", "decode", "encode", "re-encode", "compress", "decompress", "decoreco"]
+keywords = ["ffmpeg", "decode", "encode", "re-encode", "decoreco"]
 categories = ["multimedia", "video", "audio", "converter", "utility"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
