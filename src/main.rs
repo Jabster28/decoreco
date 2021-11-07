@@ -5,9 +5,23 @@ use colored::Colorize;
 use indicatif::{ProgressBar, ProgressStyle};
 use prettytable::{cell, row, Cell, Row, Table};
 use tempfile::Builder;
+use term_size;
 
 mod cli;
 fn main() {
+    // truncation function and add ellipsis
+    let truncate = |s: &str, max: i32| -> String {
+        if max <= 0 {
+            return String::from("...");
+        }
+        let max = max as usize;
+        if s.len() > max.try_into().unwrap() {
+            format!("{}...", &s[..max])
+        } else {
+            s.to_string()
+        }
+    };
+
     // make bytes human readable with a precision of 2 decimal places
     let humanize_bytes = |bytes: f64| -> String {
         let mut bytes = bytes;
@@ -122,8 +136,12 @@ fn main() {
         for file in files {
             let metadata = std::fs::metadata(file.clone()).unwrap();
             table.add_row(Row::new(vec![
-                Cell::new(&*file),
-                Cell::new(&*humanize_bytes(metadata.len() as f64)).style_spec("br"),
+                // truncate to terminal width minus the size column
+                Cell::new(&truncate(
+                    file,
+                    (term_size::dimensions().unwrap().0 - 20) as i32,
+                )),
+                Cell::new(&*humanize_bytes(metadata.len() as f64)),
             ]));
         }
         table.printstd();
@@ -277,7 +295,10 @@ fn main() {
         table.set_titles(row!["file", "old size", "new size", "saved size"]);
         for (file, old_size, new_size) in processed {
             table.add_row(Row::new(vec![
-                Cell::new(&*file),
+                Cell::new(&truncate(
+                    &file,
+                    (term_size::dimensions().unwrap().0 - 60) as i32,
+                )),
                 Cell::new(&*humanize_bytes(old_size as f64)).style_spec("br"),
                 Cell::new(&*humanize_bytes(new_size as f64)).style_spec("br"),
                 Cell::new(&*humanize_bytes(old_size as f64 - new_size as f64)).style_spec("br"),
