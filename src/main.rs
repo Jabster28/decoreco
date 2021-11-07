@@ -137,6 +137,8 @@ fn main() {
     if matches.is_present("dry-run") {
         println!("dry run enabled, no files will be modified.");
     }
+    // starts a timer
+    let start = std::time::Instant::now();
 
     // creates a progress bar
     let pb = ProgressBar::new(files.len() as u64);
@@ -304,6 +306,19 @@ fn main() {
         ]));
 
         table.printstd();
+
+        // print time elapsed
+        let elapsed = start.elapsed();
+        println!(
+            "took {}",
+            format!(
+                "{}:{:02}:{:02}",
+                elapsed.as_secs() / 3600,
+                (elapsed.as_secs() / 60) % 60,
+                elapsed.as_secs() % 60
+            )
+            .green()
+        );
     }
     // delete tempdir
     tmp.close().unwrap();
