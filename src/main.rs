@@ -131,7 +131,7 @@ fn main() {
     }
 
     // keep a list of files that have been processed and their old and new sizes
-    let mut processed: Vec<(String, u32, u32)> = Vec::new();
+    let mut processed: Vec<(String, u64, u64)> = Vec::new();
 
     // let user know if dry run is enabled
     if matches.is_present("dry-run") {
@@ -147,8 +147,8 @@ fn main() {
     );
     pb.enable_steady_tick(500);
     let tmp = Builder::new().prefix("decoreco").tempdir().unwrap();
-    let mut saved_size: u32 = 0;
-    let mut total_size: u32 = 0;
+    let mut saved_size: u64 = 0;
+    let mut total_size: u64 = 0;
 
     // iterates through the files
     for (i, file) in files.iter().enumerate() {
@@ -192,7 +192,7 @@ fn main() {
                 .output()
                 .unwrap();
 
-            let orig_file_size: u32 = String::from_utf8(orig_file_size.stdout)
+            let orig_file_size: u64 = String::from_utf8(orig_file_size.stdout)
                 .unwrap()
                 .trim()
                 .parse()
@@ -204,16 +204,15 @@ fn main() {
                 .arg(tmp.path().join(i.clone()).to_str().unwrap())
                 .output()
                 .unwrap();
-            let new_file_size: u32 = String::from_utf8(new_file_size.stdout)
+            let new_file_size: u64 = String::from_utf8(new_file_size.stdout)
                 .unwrap()
                 .trim()
                 .parse()
                 .unwrap();
             // println!("old: {}, new: {}", orig_file_size, new_file_size);
             pb.inc(1);
-            // has to be more than 50kb smaller
 
-            if new_file_size < orig_file_size - 50000 {
+            if new_file_size < orig_file_size {
                 pb.set_message(format!(
                     "{} {}",
                     format!(
@@ -236,11 +235,12 @@ fn main() {
                 // add the file to the list of processed files
                 processed.push((file.to_string(), orig_file_size, new_file_size));
             } else {
+                println!("{} {}", orig_file_size, new_file_size);
                 pb.set_message(format!(
                     "{} {}",
                     format!(
                         "file is {}% larger than original",
-                        100 - (orig_file_size * 100) / new_file_size
+                        (orig_file_size * 100) / new_file_size
                     )
                     .red(),
                     file
@@ -265,7 +265,7 @@ fn main() {
         // print the total size saved
         println!(
             "total size saved: {} ({}%)",
-            humanize_bytes(saved_size.try_into().unwrap()),
+            humanize_bytes(saved_size as f64),
             (saved_size * 100) / total_size
         );
         // print the files that were compressed
@@ -276,8 +276,8 @@ fn main() {
         for (file, old_size, new_size) in processed {
             table.add_row(Row::new(vec![
                 Cell::new(&*file),
-                Cell::new(&*humanize_bytes(old_size.try_into().unwrap())).style_spec("br"),
-                Cell::new(&*humanize_bytes(new_size.try_into().unwrap())).style_spec("br"),
+                Cell::new(&*humanize_bytes(old_size as f64)).style_spec("br"),
+                Cell::new(&*humanize_bytes(new_size as f64)).style_spec("br"),
                 Cell::new(&*humanize_bytes(old_size as f64 - new_size as f64)).style_spec("br"),
             ]));
         }
@@ -294,13 +294,13 @@ fn main() {
         // add total size saved
         table.add_row(Row::new(vec![
             Cell::new("total"),
-            Cell::new(&format!("{}", humanize_bytes(total_size.into()))).style_spec("Frr"),
+            Cell::new(&format!("{}", humanize_bytes(total_size as f64))).style_spec("Frr"),
             Cell::new(&format!(
                 "{}",
-                humanize_bytes((total_size - saved_size).into())
+                humanize_bytes((total_size - saved_size) as f64)
             ))
             .style_spec("Fgr"),
-            Cell::new(&format!("{}", humanize_bytes(saved_size.into()))).style_spec("Fbr"),
+            Cell::new(&format!("{}", humanize_bytes(saved_size as f64))).style_spec("Fbr"),
         ]));
 
         table.printstd();
