@@ -193,9 +193,12 @@ fn main() {
             .arg("-i")
             .arg(file)
             .arg("-c:v")
-            .arg("libx264")
+            .arg(matches.value_of("codec").unwrap())
             .arg("-c:a")
-            .arg("aac")
+            .arg(matches.value_of("audio").unwrap())
+            // keep subs
+            .arg("-c:s")
+            .arg("copy")
             // keep metadata
             .arg("-map_metadata")
             .arg("0")

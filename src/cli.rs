@@ -88,4 +88,24 @@ Please contribute a guide for your favorite shell! "
                 .multiple(true)
                 .help("process only these files, ignore path"),
         )
+        // add a video codec option
+        .arg(
+            Arg::with_name("video-codec")
+                .short("v")
+                .long("video-codec")
+                .takes_value(true)
+                .help("video codec to use. WARNING: check manpage for warnings on codecs")
+                .default_value("h264")
+                .possible_values(&["h264", "hevc", "vp9", "vp8", "av1"]),
+        )
+        // add an audio codec option
+        .arg(
+            Arg::with_name("audio-codec")
+                .short("a")
+                .long("audio-codec")
+                .takes_value(true)
+                .help("audio codec to use")
+                .default_value("aac")
+                .possible_values(&["aac", "opus", "vorbis", "mp3"]),
+        )
 }
