@@ -36,6 +36,9 @@ Please contribute a guide for your favorite shell! "
                         .index(1)
                         .possible_values(&Shell::variants()),
                 ))
+        .subcommand(SubCommand::with_name("manpage").about("Opens our man page.").alias("info")
+
+    )
         .arg(
             Arg::with_name("path")
                 .case_insensitive(true)
@@ -94,7 +97,7 @@ Please contribute a guide for your favorite shell! "
                 .short("v")
                 .long("video-codec")
                 .takes_value(true)
-                .help("video codec to use. WARNING: check manpage for warnings on codecs")
+                .help("video codec to use")
                 .default_value("h264")
                 .possible_values(&["h264", "hevc", "vp9", "vp8", "av1"]),
         )
