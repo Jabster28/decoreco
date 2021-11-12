@@ -16,7 +16,7 @@ pub fn cli() -> App<'static, 'static> {
 #### BASH ####
 Append the following to your '~/.bashrc':
 
-source <(kamu completions bash)
+source <(decoreco completions bash)
 
 You will need to reload your shell session (or execute the same command in your current one) for changes to take effect.
 
@@ -25,7 +25,7 @@ You will need to reload your shell session (or execute the same command in your 
 Append the following to your '~/.zshrc':
 
 autoload -U +X bashcompinit && bashcompinit
-source <(kamu completions bash)
+source <(decoreco completions bash)
 
 Please contribute a guide for your favorite shell! "
                 )
