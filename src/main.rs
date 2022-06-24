@@ -5,7 +5,6 @@ use man::prelude::*;
 use prettytable::{cell, row, Cell, Row, Table};
 use std::process::Command;
 use tempfile::Builder;
-use term_size;
 
 mod cli;
 fn main() {
@@ -15,7 +14,7 @@ fn main() {
             return String::from("...");
         }
         let max = max as usize;
-        if s.len() > max.try_into().unwrap() {
+        if s.len() > max {
             format!("{}...", &s[..max])
         } else {
             s.to_string()
@@ -209,7 +208,7 @@ fn main() {
             .output()
             .unwrap();
         _tmp = String::from_utf8(list.stdout).unwrap();
-        files = _tmp.split("\n").collect();
+        files = _tmp.split('\n').collect();
         files.retain(|x| !x.is_empty());
     } else {
         // errors out and prints help if no arguments are given
@@ -242,7 +241,7 @@ fn main() {
         table.set_titles(row!["file", "size"]);
 
         for file in files {
-            let metadata = std::fs::metadata(file.clone()).unwrap();
+            let metadata = std::fs::metadata(file).unwrap();
             table.add_row(Row::new(vec![
                 // truncate to terminal width minus the size column
                 Cell::new(&truncate(
@@ -280,7 +279,7 @@ fn main() {
 
     // iterates through the files
     for (i, file) in files.iter().enumerate() {
-        let i = i.to_string() + "." + file.split(".").last().unwrap();
+        let i = i.to_string() + "." + file.split('.').last().unwrap();
         // checks if the file is a video file
         let is_video = String::from_utf8(
             Command::new("ffprobe")
@@ -428,13 +427,9 @@ fn main() {
         // add total size saved
         table.add_row(Row::new(vec![
             Cell::new("total"),
-            Cell::new(&format!("{}", humanize_bytes(total_size as f64))).style_spec("Frr"),
-            Cell::new(&format!(
-                "{}",
-                humanize_bytes((total_size - saved_size) as f64)
-            ))
-            .style_spec("Fgr"),
-            Cell::new(&format!("{}", humanize_bytes(saved_size as f64))).style_spec("Fbr"),
+            Cell::new(&humanize_bytes(total_size as f64)).style_spec("Frr"),
+            Cell::new(&humanize_bytes((total_size - saved_size) as f64)).style_spec("Fgr"),
+            Cell::new(&humanize_bytes(saved_size as f64)).style_spec("Fbr"),
         ]));
 
         table.printstd();
