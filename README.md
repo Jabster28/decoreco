@@ -25,6 +25,9 @@ brew install jabster28/jabster28/decoreco
 building latest release with [cargo](https://doc.rust-lang.org/cargo/)
 
 ```bash
-# rust should be installed by installing rustup from your favourite package manger
+# rust should be installed by installing rustup from your favourite package manger e.g pacman -S rustup 
 cargo install decoreco
+
+# if cargo complains about binaries not being in PATH, add this to your shell profile:
+# export PATH=$PATH:$HOME/.cargo/bin
 ```
