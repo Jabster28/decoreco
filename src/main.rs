@@ -300,9 +300,9 @@ fn main() {
             .arg("-i")
             .arg(file)
             .arg("-c:v")
-            .arg(matches.value_of("codec").unwrap())
+            .arg(matches.value_of("video-codec").unwrap())
             .arg("-c:a")
-            .arg(matches.value_of("audio").unwrap())
+            .arg(matches.value_of("audio-codec").unwrap())
             // keep subs
             .arg("-c:s")
             .arg("copy")
