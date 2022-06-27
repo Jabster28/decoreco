@@ -316,8 +316,7 @@ fn main() {
         if res.status.success() {
             // check if file is bigger than the original
             let orig_file_size = Command::new("stat")
-                .arg("-f")
-                .arg("%z")
+                .arg("--printf=%s")
                 .arg(file)
                 .output()
                 .unwrap();
@@ -329,8 +328,7 @@ fn main() {
                 .unwrap();
 
             let new_file_size = Command::new("stat")
-                .arg("-f")
-                .arg("%z")
+                .arg("--printf=%s")
                 .arg(tmp.path().join(i.clone()).to_str().unwrap())
                 .output()
                 .unwrap();
