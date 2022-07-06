@@ -221,7 +221,11 @@ fn main() {
         println!("no files found!");
         return;
     }
-    println!("found {} files!", files.len());
+    println!("found {} file{}!", files.len(), if files.len() == 1 {
+        ""
+    } else {
+        "s"
+    });
     // sort the files by size if the user requested it
     if matches.is_present("sort") {
         files.sort_by(|a, b| {
