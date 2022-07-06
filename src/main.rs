@@ -396,7 +396,7 @@ fn main() {
     } else {
         // print the total size saved
         println!(
-            "total size saved: {} ({}%)",
+            "total size saved: {} ({}% of original)",
             humanize_bytes(saved_size as f64),
             (saved_size * 100) / total_size
         );
