@@ -435,14 +435,21 @@ fn main() {
         // print time elapsed
         let elapsed = start.elapsed();
         println!(
-            "took {}",
+            "took {} total, on average {} per MB",
             format!(
                 "{}:{:02}:{:02}",
                 elapsed.as_secs() / 3600,
                 (elapsed.as_secs() / 60) % 60,
                 elapsed.as_secs() % 60
             )
-            .green()
+            .green(),
+            format!(
+                "{:02}:{:02}:{:02}",
+                elapsed.as_secs() / (total_size / 1_000_000) as u64 / 3600,
+                (elapsed.as_secs() / (total_size / 1_000_000) as u64 / 60) % 60,
+                elapsed.as_secs() / (total_size / 1_000_000) as u64 % 60
+            )
+            .green(),
         );
     }
     // delete tempdir
