@@ -1,9 +1,14 @@
+#![forbid(unsafe_code)]
 use clap::Shell;
 use colored::Colorize;
 use indicatif::{ProgressBar, ProgressStyle};
-use man::prelude::*;
+
 use prettytable::{cell, row, Cell, Row, Table};
-use std::process::Command;
+use rayon::prelude::*;
+use std::{
+    process::Command,
+    sync::{Arc, Mutex},
+};
 use tempfile::Builder;
 
 mod cli;
@@ -66,147 +71,73 @@ fn main() {
 
     // if manpage is requested, print the manpage and exit
     if matches.is_present("manpage") {
-        let page = Manual::new("decoreco")
-        .about("re-encode video and audio files to save space")
-        .author(Author::new("Justyn Boyer (Jabster28)").email("justynboyer@gmail.com"))
-        // also add a dry run flag
-        .flag(
-            Flag::new()
-                .short("d")
-                .long("dry-run")
-                .help("don't actually do anything"),
-        )
-        // and a depth option
-        .option(
-            Opt::new("depth")
-                .short("D")
-                .long("depth")
-                .help("set the depth of the tree to search for files"),
-        )
-        // and a list flag
-        .flag(
-            Flag::new()
-                .short("l")
-                .long("list")
-                .help("list all files that would be processed and their sizes"),
-        )
-        // and a sort flag
-        .flag(
-            Flag::new()
-                .short("s")
-                .long("sort")
-                .help("sort the list of files by size"),
-        )
-        // and a reverse flag
-        .flag(
-            Flag::new()
-                .short("r")
-                .long("reverse")
-                .help("reverse the sort order"),
-        )
-        // and a set option
-        .option(
-            Opt::new("set")
-                .short("S")
-                .long("set")
-                .help("process only these files, ignore path"),
-        )
-        // and a video codec option
-        .option(
-            Opt::new("video-codec")
-                .short("v")
-                .long("video-codec")
-                .help("set the video codec to use. see CODECS for more info")
-                .default_value("h264"),
-        )
-        // and an audio codec option
-        .option(
-            Opt::new("audio-codec")
-                .short("a")
-                .long("audio-codec")
-                .help("set the audio codec to use. see CODECS for more info")
-                .default_value("aac"),
-        )
-        .example(
-            Example::new()
-                .text("re-encode all video files in your downloads folder to h264 and aac")
-                .command("decoreco ~/Downloads"),
-        )
-        .example(
-            Example::new()
-                .text("re-encode all video files in your downloads folder to hevc and mp3")
-                .command("decoreco -v hevc -a mp3 ~/Downloads"),
-        )
-        .example(
-            Example::new()
-                .text("list all video files in your home folder and sort them by size")
-                .command("decoreco -l -s ~/"),
-        )
-        .example(
-            Example::new()
-                .text("perform a dry run of converting your movies folder to avi")
-                .command("decoreco -d -v avi ~/Movies"),
-        )
-                .custom(
-            Section::new("codecs")
-                .paragraph("the following codecs are supported in order of general size while retaining quality, smallest to largest:")
-                .paragraph("(video) hevc, vp9, [h264], , vp8").paragraph("(audio) [aac], opus, vorbis, mp3")
-                .paragraph("HEVC (also known as H.265) isn't supported by many web browsers or operating systems at the moment, and as such some videos might not play after you re-encode them. This codec should only be used if you don't plan on sharing the files over the internet without transcoding them (like using a media server such as plex or emby), or unless you're confident that your software and hardware can play it.").paragraph("Encoding HEVC also takes quite a bit longer thn h264, due to the higher compression ratio.")
-        );
-        // save to a tempdir
-        let tempdir = Builder::new().prefix("decoreco").tempdir().unwrap();
-        let manpage = tempdir.path().join("decoreco.1");
-        let mut file = std::fs::File::create(&manpage).unwrap();
-        std::io::Write::write_all(&mut file, page.render().as_bytes())
-            .and_then(|_| {
-                Command::new("man").arg(manpage).status().map(|status| {
-                    if status.success() {
-                        Ok(())
-                    } else {
-                        Err(std::io::Error::new(std::io::ErrorKind::Other, "man failed"))
-                    }
-                })
-            })
-            .unwrap()
-            .unwrap();
-        return;
+        cli::man();
     }
+    rayon::ThreadPoolBuilder::new()
+        .num_threads(matches.value_of("threads").unwrap().parse().unwrap())
+        .build_global()
+        .unwrap();
 
     // run the appropriate command
     // don't search for files if set is specified
     let mut files: Vec<&str>;
     // what???
-    let mut _tmp = "".to_string();
+    let mut _tmp = String::new();
     if matches.is_present("set") {
         files = matches.values_of("set").unwrap().collect();
     } else if matches.is_present("path") {
         let check_path = matches.value_of("path").unwrap();
         // searches for media files in the given path
-        println!("searching for video files in {}", check_path);
-        let list = Command::new("find")
+        println!("searching for media files in {check_path}");
+        let mut cmd = Command::new("find");
+        let cmd = cmd
             .arg(check_path)
             // set the depth to search
             .args(if matches.is_present("depth") {
                 vec!["-maxdepth", matches.value_of("depth").unwrap()]
             } else {
                 vec![]
-            })
+            });
+        let list = if matches.is_present("images") {
+            cmd.arg("-type")
+                .arg("f")
+                .arg("-name")
+                .arg("*.png")
+                .arg("-o")
+                .arg("-name")
+                .arg("*.jpg")
+                .arg("-o")
+                .arg("-name")
+                .arg("*.jpeg")
+                .arg("-o")
+                .arg("-name")
+                .arg("*.avif")
+                .arg("-o")
+                .arg("-name")
+                .arg("*.heic")
+                .output()
+                .unwrap()
+        } else {
             // only search for video files
-            .arg("-type")
-            .arg("f")
-            .arg("-name")
-            .arg("*.mp4")
-            .arg("-o")
-            .arg("-name")
-            .arg("*.mkv")
-            .arg("-o")
-            .arg("-name")
-            .arg("*.mov")
-            .arg("-o")
-            .arg("-name")
-            .arg("*.avi")
-            .output()
-            .unwrap();
+            cmd.arg("-type")
+                .arg("f")
+                .arg("-name")
+                .arg("*.mp4")
+                .arg("-o")
+                .arg("-name")
+                .arg("*.mkv")
+                .arg("-o")
+                .arg("-name")
+                .arg("*.webm")
+                .arg("-o")
+                .arg("-name")
+                .arg("*.mov")
+                .arg("-o")
+                .arg("-name")
+                .arg("*.avi")
+                .output()
+                .unwrap()
+        };
         _tmp = String::from_utf8(list.stdout).unwrap();
         files = _tmp.split('\n').collect();
         files.retain(|x| !x.is_empty());
@@ -221,11 +152,16 @@ fn main() {
         println!("no files found!");
         return;
     }
-    println!("found {} file{}!", files.len(), if files.len() == 1 {
-        ""
-    } else {
-        "s"
-    });
+    // remove empty strings from the list of files
+    files.retain(|x| !x.trim().is_empty());
+
+    // remove empty files from the list of files
+    files.retain(|x| std::fs::metadata(x).unwrap().len() != 0);
+    println!(
+        "found {} file{}!",
+        files.len(),
+        if files.len() == 1 { "" } else { "s" }
+    );
     // sort the files by size if the user requested it
     if matches.is_present("sort") {
         files.sort_by(|a, b| {
@@ -252,7 +188,7 @@ fn main() {
                     file,
                     (term_size::dimensions().unwrap().0 - 20) as i32,
                 )),
-                Cell::new(&*humanize_bytes(metadata.len() as f64)),
+                Cell::new(&humanize_bytes(metadata.len() as f64)),
             ]));
         }
         table.printstd();
@@ -260,7 +196,8 @@ fn main() {
     }
 
     // keep a list of files that have been processed and their old and new sizes
-    let mut processed: Vec<(String, u64, u64)> = Vec::new();
+    let processed: Vec<(String, u64, u64)> = Vec::new();
+    let shared_processed = Arc::new(Mutex::new(processed));
 
     // let user know if dry run is enabled
     if matches.is_present("dry-run") {
@@ -278,45 +215,92 @@ fn main() {
     );
     pb.enable_steady_tick(500);
     let tmp = Builder::new().prefix("decoreco").tempdir().unwrap();
-    let mut saved_size: u64 = 0;
-    let mut total_size: u64 = 0;
+    let saved_size = Arc::new(Mutex::new(0_u64));
+    let total_size = Arc::new(Mutex::new(0_u64));
 
     // iterates through the files
-    for (i, file) in files.iter().enumerate() {
+    files.par_iter().enumerate().for_each(|(i, file)| {
         let i = i.to_string() + "." + file.split('.').last().unwrap();
         // checks if the file is a video file
-        let is_video = String::from_utf8(
-            Command::new("ffprobe")
-                .arg("-show_streams")
-                .arg(file)
-                .output()
-                .unwrap()
-                .stdout,
-        )
-        .unwrap()
-        .contains("codec_type=video");
-        // if not, returns
-        if !is_video {
-            pb.set_message(format!("{} is not a video file", file));
-            continue;
-        }
-        let res = Command::new("ffmpeg")
-            .arg("-i")
+
+        let output = Command::new("ffprobe")
+            .arg("-show_streams")
             .arg(file)
-            .arg("-c:v")
-            .arg(matches.value_of("video-codec").unwrap())
-            .arg("-c:a")
-            .arg(matches.value_of("audio-codec").unwrap())
-            // keep subs
-            .arg("-c:s")
-            .arg("copy")
-            // keep metadata
-            .arg("-map_metadata")
-            .arg("0")
-            .arg("-y")
-            .arg(tmp.path().join(i.clone()).to_str().unwrap())
             .output()
             .unwrap();
+
+        let stdout = String::from_utf8(output.stdout).unwrap();
+
+        // Split the output by lines and iterate over them
+        let mut codec_type = None; // Initialize as None
+        stdout.lines().find(|line| {
+            // Find the position of "codec_type="
+            match line
+                .find("codec_type=")
+                .map(|pos| &line[pos..])
+                .and_then(|captures| {
+                    // Split the line by '=' and get the second part
+                    captures.split('=').nth(1).map(|ctype| {
+                        codec_type = Some(ctype);
+                    })
+                }) {
+                Some(()) => true,
+                None => false,
+            }
+        });
+
+        // // if not, returns
+        // if !is_video {
+        //     pb.set_message(format!("{} is not a video file", file));
+        //     continue;
+        // }
+
+        let res = match codec_type.unwrap() {
+            "video" => {
+                if matches.is_present("images") {
+                    let losslessimg = // extract extension and then use match
+                    match file.split('.').last().unwrap() {
+                        "png" => true,
+                        "jpg" | "jpeg" => false,
+                        // "avif" => Command::new(program)
+                        _ => {
+                            todo!("{} is not a supported image format", file);
+                        }
+                    };
+                    let mut cmd = Command::new("cjxl");
+                    let cmd: &mut Command = if losslessimg {
+                        cmd.arg("-d").arg("0")
+                    } else {
+                        &mut cmd
+                    };
+                    cmd.arg(file)
+                        .arg(tmp.path().join(i.clone()).to_str().unwrap())
+                        .output()
+                        .unwrap()
+                } else {
+                    Command::new("ffmpeg")
+                        .arg("-i")
+                        .arg(file)
+                        .arg("-c:v")
+                        .arg(matches.value_of("video-codec").unwrap())
+                        .arg("-c:a")
+                        .arg(matches.value_of("audio-codec").unwrap())
+                        // keep subs
+                        .arg("-c:s")
+                        .arg("copy")
+                        // keep metadata
+                        .arg("-map_metadata")
+                        .arg("0")
+                        .arg("-y")
+                        .arg(tmp.path().join(i.clone()).to_str().unwrap())
+                        .output()
+                        .unwrap()
+                }
+            }
+            "audio" => todo!(),
+            _ => unreachable!("this should never happen, {}", codec_type.unwrap()),
+        };
+
         if res.status.success() {
             // check if file is bigger than the original
             let orig_file_size = Command::new("stat")
@@ -354,18 +338,32 @@ fn main() {
                     .green(),
                     file
                 ));
-                saved_size += orig_file_size - new_file_size;
-                total_size += orig_file_size;
+                let mut save = saved_size.lock().unwrap();
+                *save += orig_file_size - new_file_size;
+                let mut total = total_size.lock().unwrap();
+                *total += orig_file_size;
                 // move the file to the original location if it's not a dry run
                 if !matches.is_present("dry-run") {
                     Command::new("mv")
                         .arg(tmp.path().join(i.clone()).to_str().unwrap())
-                        .arg(file)
+                        .arg(
+                            // if it's an img make sure to add the img ext
+                            if matches.is_present("images") {
+                                format!("{}.jxl", file)
+                            } else {
+                                file.to_string()
+                            },
+                        )
                         .output()
                         .unwrap();
+                    if matches.is_present("images") {
+                        Command::new("rm").arg(file).output().unwrap();
+                    }
                 }
                 // add the file to the list of processed files
-                processed.push((file.to_string(), orig_file_size, new_file_size));
+                let mut processed = shared_processed.lock().unwrap();
+
+                processed.push(((*file).to_string(), orig_file_size, new_file_size));
             } else {
                 println!("{} {}", orig_file_size, new_file_size);
                 pb.set_message(format!(
@@ -383,14 +381,16 @@ fn main() {
         } else {
             println!("{}", String::from_utf8(res.stderr).unwrap());
         }
-    }
+    });
 
     // finishes the progress bar
     pb.finish_and_clear();
     // print finished in rainbows
     println!("{}", "finished!".green().bold().on_blue().underline());
 
-    // if saved size is 0, no files were compressed
+    // if saved_size == 0 {
+    let saved_size = *saved_size.lock().unwrap();
+    let total_size = *total_size.lock().unwrap();
     if saved_size == 0 {
         println!("no files were compressed.");
     } else {
@@ -405,15 +405,16 @@ fn main() {
         let mut table = Table::new();
         table.set_format(*prettytable::format::consts::FORMAT_BOX_CHARS);
         table.set_titles(row!["file", "old size", "new size", "saved size"]);
-        for (file, old_size, new_size) in processed {
+        let processed = shared_processed.lock().unwrap();
+        for (file, old_size, new_size) in processed.clone() {
             table.add_row(Row::new(vec![
                 Cell::new(&truncate(
                     &file,
                     (term_size::dimensions().unwrap().0 - 60) as i32,
                 )),
-                Cell::new(&*humanize_bytes(old_size as f64)).style_spec("br"),
-                Cell::new(&*humanize_bytes(new_size as f64)).style_spec("br"),
-                Cell::new(&*humanize_bytes(old_size as f64 - new_size as f64)).style_spec("br"),
+                Cell::new(&humanize_bytes(old_size as f64)).style_spec("br"),
+                Cell::new(&humanize_bytes(new_size as f64)).style_spec("br"),
+                Cell::new(&humanize_bytes(old_size as f64 - new_size as f64)).style_spec("br"),
             ]));
         }
 
@@ -438,20 +439,30 @@ fn main() {
 
         // print time elapsed
         let elapsed = start.elapsed();
+        println!("{} {}", elapsed.as_millis(), total_size);
         println!(
             "took {} total, on average {} per MB",
             format!(
                 "{}:{:02}:{:02}",
-                elapsed.as_secs() / 3600,
-                (elapsed.as_secs() / 60) % 60,
-                elapsed.as_secs() % 60
+                (elapsed.as_millis() / 1000) / 3600,
+                ((elapsed.as_millis() / 1000) / 60) % 60,
+                (elapsed.as_millis() / 1000) % 60
             )
             .green(),
             format!(
                 "{:02}:{:02}:{:02}",
-                elapsed.as_secs() / (total_size / 1_000_000) as u64 / 3600,
-                (elapsed.as_secs() / (total_size / 1_000_000) as u64 / 60) % 60,
-                elapsed.as_secs() / (total_size / 1_000_000) as u64 % 60
+                (((elapsed.as_millis() as f64 / 1000.0).floor())
+                    / (total_size as f64 / 1_000_000.0)
+                    / 3600.0)
+                    .floor(),
+                ((elapsed.as_millis() as f64 / 1000.0).floor()
+                    / (total_size as f64 / 1_000_000.0)
+                    / 60.0)
+                    .floor() as u128
+                    % 60,
+                ((elapsed.as_millis() as f64 / 1000.0).floor() / (total_size as f64 / 1_000_000.0))
+                    .floor() as u128
+                    % 60
             )
             .green(),
         );
