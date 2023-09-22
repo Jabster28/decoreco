@@ -101,40 +101,32 @@ fn main() {
         let list = if matches.is_present("images") {
             cmd.arg("-type")
                 .arg("f")
-                .arg("-name")
-                .arg("*.png")
-                .arg("-o")
-                .arg("-name")
-                .arg("*.jpg")
-                .arg("-o")
-                .arg("-name")
-                .arg("*.jpeg")
-                .arg("-o")
-                .arg("-name")
-                .arg("*.avif")
-                .arg("-o")
-                .arg("-name")
-                .arg("*.heic")
+                .args({
+                    let types = "png jpg jpeg avif heic".split(' ').collect::<Vec<&str>>();
+                    let mut args = Vec::new();
+                    for t in types {
+                        args.push("-o");
+                        args.push("-name");
+                        args.push(&*format!("*.{}", t));
+                    }
+                    args
+                })
                 .output()
                 .unwrap()
         } else {
-            // only search for video files
+            // only search for media files
             cmd.arg("-type")
                 .arg("f")
-                .arg("-name")
-                .arg("*.mp4")
-                .arg("-o")
-                .arg("-name")
-                .arg("*.mkv")
-                .arg("-o")
-                .arg("-name")
-                .arg("*.webm")
-                .arg("-o")
-                .arg("-name")
-                .arg("*.mov")
-                .arg("-o")
-                .arg("-name")
-                .arg("*.avi")
+                .args({
+                    let types = "mp4 mkv webm mov avi".split(' ').collect::<Vec<&str>>();
+                    let mut args = Vec::new();
+                    for t in types {
+                        args.push("-o");
+                        args.push("-name");
+                        args.push(&*format!("*.{}", t));
+                    }
+                    args
+                })
                 .output()
                 .unwrap()
         };
@@ -221,85 +213,6 @@ fn main() {
     // iterates through the files
     files.par_iter().enumerate().for_each(|(i, file)| {
         let i = i.to_string() + "." + file.split('.').last().unwrap();
-        // checks if the file is a video file
-
-        let output = Command::new("ffprobe")
-            .arg("-show_streams")
-            .arg(file)
-            .output()
-            .unwrap();
-
-        let stdout = String::from_utf8(output.stdout).unwrap();
-
-        // Split the output by lines and iterate over them
-        let mut codec_type = None; // Initialize as None
-        stdout.lines().find(|line| {
-            // Find the position of "codec_type="
-            match line
-                .find("codec_type=")
-                .map(|pos| &line[pos..])
-                .and_then(|captures| {
-                    // Split the line by '=' and get the second part
-                    captures.split('=').nth(1).map(|ctype| {
-                        codec_type = Some(ctype);
-                    })
-                }) {
-                Some(()) => true,
-                None => false,
-            }
-        });
-
-        // // if not, returns
-        // if !is_video {
-        //     pb.set_message(format!("{} is not a video file", file));
-        //     continue;
-        // }
-
-        let res = match codec_type.unwrap() {
-            "video" => {
-                if matches.is_present("images") {
-                    let losslessimg = // extract extension and then use match
-                    match file.split('.').last().unwrap() {
-                        "png" => true,
-                        "jpg" | "jpeg" => false,
-                        // "avif" => Command::new(program)
-                        _ => {
-                            todo!("{} is not a supported image format", file);
-                        }
-                    };
-                    let mut cmd = Command::new("cjxl");
-                    let cmd: &mut Command = if losslessimg {
-                        cmd.arg("-d").arg("0")
-                    } else {
-                        &mut cmd
-                    };
-                    cmd.arg(file)
-                        .arg(tmp.path().join(i.clone()).to_str().unwrap())
-                        .output()
-                        .unwrap()
-                } else {
-                    Command::new("ffmpeg")
-                        .arg("-i")
-                        .arg(file)
-                        .arg("-c:v")
-                        .arg(matches.value_of("video-codec").unwrap())
-                        .arg("-c:a")
-                        .arg(matches.value_of("audio-codec").unwrap())
-                        // keep subs
-                        .arg("-c:s")
-                        .arg("copy")
-                        // keep metadata
-                        .arg("-map_metadata")
-                        .arg("0")
-                        .arg("-y")
-                        .arg(tmp.path().join(i.clone()).to_str().unwrap())
-                        .output()
-                        .unwrap()
-                }
-            }
-            "audio" => todo!(),
-            _ => unreachable!("this should never happen, {}", codec_type.unwrap()),
-        };
 
         if res.status.success() {
             // check if file is bigger than the original
@@ -469,4 +382,54 @@ fn main() {
     }
     // delete tempdir
     tmp.close().unwrap();
+}
+
+fn video(
+    file: &&str,
+    matches: &clap::ArgMatches<'_>,
+    tmp: &tempfile::TempDir,
+    i: &String,
+) -> std::process::Output {
+    Command::new("ffmpeg")
+        .arg("-i")
+        .arg(file)
+        .arg("-c:v")
+        .arg(matches.value_of("video-codec").unwrap())
+        .arg("-c:a")
+        .arg("copy")
+        // keep subs
+        .arg("-c:s")
+        .arg("copy")
+        // keep metadata
+        .arg("-map_metadata")
+        .arg("0")
+        .arg("-y")
+        .arg(tmp.path().join(i.clone()).to_str().unwrap())
+        .output()
+        .unwrap()
+}
+
+fn audio(
+    file: &&str,
+    matches: &clap::ArgMatches<'_>,
+    tmp: &tempfile::TempDir,
+    i: &String,
+) -> std::process::Output {
+    Command::new("ffmpeg")
+        .arg("-i")
+        .arg(file)
+        .arg("-c:a")
+        .arg(matches.value_of("audio-codec").unwrap())
+        .arg("-c:v")
+        .arg("copy")
+        // keep subs
+        .arg("-c:s")
+        .arg("copy")
+        // keep metadata
+        .arg("-map_metadata")
+        .arg("0")
+        .arg("-y")
+        .arg(tmp.path().join(i.clone()).to_str().unwrap())
+        .output()
+        .unwrap()
 }
