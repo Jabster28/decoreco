@@ -7,7 +7,6 @@ use indicatif::{ProgressBar, ProgressStyle};
 use prettytable::{row, Cell, Row, Table};
 use rayon::prelude::*;
 use std::{
-    ops::Div,
     process::Command,
     sync::{Arc, Mutex},
     time::Duration,

@@ -15,7 +15,7 @@ pub fn cli() -> App<'static, 'static> {
         .author("Jabster28 <justynboyer@gmail.com>").subcommand(
                     SubCommand::with_name("completions")
                 .about("Generate tab-completion scripts for your shell")
-                .after_help(r"The command outputs on 'stdout', allowing you to re-direct the output to the file of your choosing. Where you place the file will depend on which shell and which operating system you are using. Your particular configuration may also determine where these scripts need to be placed. Here are some common set ups: 
+                .after_help(r"The command outputs on 'stdout', allowing you to re-direct the output to the file of your choosing. Where you place the file will depend on which shell and which operating system you are using. Your particular configuration may also determine where these scripts need to be placed. Here are some common set ups:
 
 #### BASH ####
 Append the following to your '~/.bashrc':
