@@ -1,4 +1,5 @@
 #![forbid(unsafe_code)]
+
 use clap::Shell;
 use colored::Colorize;
 use indicatif::{ProgressBar, ProgressStyle};
@@ -6,6 +7,7 @@ use indicatif::{ProgressBar, ProgressStyle};
 use prettytable::{row, Cell, Row, Table};
 use rayon::prelude::*;
 use std::{
+    ops::Div,
     process::Command,
     sync::{Arc, Mutex},
     time::Duration,
@@ -445,7 +447,10 @@ fn main() {
         println!(
             "took {} total, on average {} per MB",
             time_human(elapsed.as_millis()).green(),
-            time_human(elapsed.as_millis() / (u128::from(total_size).div_ceil(1_000_000))).green(),
+            time_human(
+                elapsed.as_millis() / (u128::from(total_size).checked_div(1_000_000).unwrap_or(1))
+            )
+            .green(),
         );
     }
     // delete tempdir
