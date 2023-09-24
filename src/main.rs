@@ -3,51 +3,91 @@ use clap::Shell;
 use colored::Colorize;
 use indicatif::{ProgressBar, ProgressStyle};
 
-use prettytable::{cell, row, Cell, Row, Table};
+use prettytable::{row, Cell, Row, Table};
 use rayon::prelude::*;
 use std::{
     process::Command,
     sync::{Arc, Mutex},
+    time::Duration,
 };
 use tempfile::Builder;
 
 mod cli;
+
+/// Truncates a given string to a maximum length and appends "..." to the end if truncated.
+///
+/// # Arguments
+///
+/// * `s` - A string slice to be truncated.
+/// * `max` - The maximum length of the truncated string.
+///
+/// # Returns
+///
+/// * A new `String` containing the truncated string.
+///
+/// # Examples
+///
+/// ```
+/// let s = "Hello, world!";
+/// let truncated = truncate(s, 5);
+/// assert_eq!(truncated, "Hello...");
+/// ```
+fn truncate(s: &str, max: usize) -> String {
+    if max == 0 {
+        return String::from("...");
+    }
+    if s.len() > max {
+        format!("{}...", &s[..max])
+    } else {
+        s.to_string()
+    }
+}
+
+/// Converts bytes to a human-readable string.
+///
+/// # Arguments
+///
+/// * `bytes` - The number of bytes to convert.
+///
+/// # Examples
+///
+/// ```
+/// let bytes = 1024;
+/// let humanized = humanize_bytes(bytes);
+/// assert_eq!(humanized, "1 KiB");
+/// ```
+#[allow(clippy::useless_let_if_seq)]
+fn humanize_bytes<
+    T: std::cmp::PartialOrd<T> + std::ops::DivAssign<T> + std::fmt::Display + From<u32>,
+>(
+    bytes: T,
+) -> String {
+    let mut bytes = bytes;
+    let mut unit = if bytes >= T::from(1024) {
+        bytes /= T::from(1024);
+        "KiB"
+    } else {
+        "B"
+    };
+    if bytes >= T::from(1024) {
+        bytes /= T::from(1024);
+        unit = "MiB";
+    }
+    if bytes >= T::from(1024) {
+        bytes /= T::from(1024);
+        unit = "GiB";
+    }
+    if bytes >= T::from(1024) {
+        bytes /= T::from(1024);
+        unit = "TiB";
+    }
+    format!("{bytes} {unit}")
+}
+
 fn main() {
     // truncation function and add ellipsis
-    let truncate = |s: &str, max: i32| -> String {
-        if max <= 0 {
-            return String::from("...");
-        }
-        let max = max as usize;
-        if s.len() > max {
-            format!("{}...", &s[..max])
-        } else {
-            s.to_string()
-        }
-    };
+    // let truncate =
 
-    // make bytes human readable with a precision of 2 decimal places
-    let humanize_bytes = |bytes: f64| -> String {
-        let mut bytes = bytes;
-        let mut unit = "B";
-        if bytes >= 1024.0 {
-            bytes /= 1024.0;
-            unit = "KiB";
-        }
-        if bytes >= 1024.0 {
-            bytes /= 1024.0;
-            unit = "MiB";
-        }
-        if bytes >= 1024.0 {
-            bytes /= 1024.0;
-            unit = "GiB";
-        }
-        if bytes >= 1024.0 {
-            bytes /= 1024.0;
-            unit = "TiB";
-        }
-        format!("{:.2} {}", bytes, unit)
-    };
     let app = cli::cli();
     let matches = app.clone().get_matches();
 
@@ -74,19 +114,31 @@ fn main() {
         cli::man();
     }
     rayon::ThreadPoolBuilder::new()
-        .num_threads(matches.value_of("threads").unwrap().parse().unwrap())
+        .num_threads({
+            usize::from(
+                0 == matches
+                    .value_of("threads")
+                    .expect("no specified thread number?")
+                    .parse()
+                    .expect("not a usize?")
+                    && !matches.is_present("images"),
+            )
+        })
         .build_global()
-        .unwrap();
+        .expect("failed to set rayon thread number. is the thread count valid?");
 
     // run the appropriate command
     // don't search for files if set is specified
     let mut files: Vec<&str>;
     // what???
-    let mut _tmp = String::new();
+    let tmp: String;
     if matches.is_present("set") {
-        files = matches.values_of("set").unwrap().collect();
+        files = matches
+            .values_of("set")
+            .expect("set arg was empty")
+            .collect();
     } else if matches.is_present("path") {
-        let check_path = matches.value_of("path").unwrap();
+        let check_path = matches.value_of("path").expect("path arg was empty");
         // searches for media files in the given path
         println!("searching for media files in {check_path}");
         let mut cmd = Command::new("find");
@@ -94,7 +146,10 @@ fn main() {
             .arg(check_path)
             // set the depth to search
             .args(if matches.is_present("depth") {
-                vec!["-maxdepth", matches.value_of("depth").unwrap()]
+                vec![
+                    "-maxdepth",
+                    matches.value_of("depth").expect("depth arg was empty"),
+                ]
             } else {
                 vec![]
             });
@@ -102,40 +157,44 @@ fn main() {
             cmd.arg("-type")
                 .arg("f")
                 .args({
-                    let types = "png jpg jpeg avif heic".split(' ').collect::<Vec<&str>>();
-                    let mut args = Vec::new();
+                    let types = "jpg jpeg avif heic".split(' ').collect::<Vec<&str>>();
+                    let mut args: Vec<String> = Vec::new();
+                    args.push("-name".to_owned());
+                    args.push("*.png".to_string());
                     for t in types {
-                        args.push("-o");
-                        args.push("-name");
-                        args.push(&*format!("*.{}", t));
+                        args.push("-o".to_owned());
+                        args.push("-name".to_owned());
+                        args.push(format!("*.{t}"));
                     }
                     args
                 })
                 .output()
-                .unwrap()
+                .unwrap_or_else(|e| panic!("failed to find files: {e}"))
         } else {
             // only search for media files
             cmd.arg("-type")
                 .arg("f")
                 .args({
-                    let types = "mp4 mkv webm mov avi".split(' ').collect::<Vec<&str>>();
-                    let mut args = Vec::new();
+                    let types = "mkv webm mov avi".split(' ').collect::<Vec<&str>>();
+                    let mut args: Vec<String> = Vec::new();
+                    args.push("-name".to_owned());
+                    args.push("*.mp4".to_string());
                     for t in types {
-                        args.push("-o");
-                        args.push("-name");
-                        args.push(&*format!("*.{}", t));
+                        args.push("-o".to_owned());
+                        args.push("-name".to_owned());
+                        args.push(format!("*.{t}"));
                     }
                     args
                 })
                 .output()
-                .unwrap()
+                .unwrap_or_else(|e| panic!("failed to find files: {e}"))
         };
-        _tmp = String::from_utf8(list.stdout).unwrap();
-        files = _tmp.split('\n').collect();
+        tmp = String::from_utf8(list.stdout).expect("failed to read file list, invalid utf-8?");
+        files = tmp.split('\n').collect();
         files.retain(|x| !x.is_empty());
     } else {
         // errors out and prints help if no arguments are given
-        app.clone().print_help().unwrap();
+        app.clone().print_help().expect("idek");
         return;
     }
 
@@ -148,7 +207,13 @@ fn main() {
     files.retain(|x| !x.trim().is_empty());
 
     // remove empty files from the list of files
-    files.retain(|x| std::fs::metadata(x).unwrap().len() != 0);
+    files.retain(|x| match std::fs::metadata(x) {
+        Ok(e) => e.len() != 0,
+        Err(err) => {
+            println!("{}", format!("failed to read file '{x}': {err}").red());
+            false
+        }
+    });
     println!(
         "found {} file{}!",
         files.len(),
@@ -157,8 +222,12 @@ fn main() {
     // sort the files by size if the user requested it
     if matches.is_present("sort") {
         files.sort_by(|a, b| {
-            let a = std::fs::metadata(a).unwrap().len();
-            let b = std::fs::metadata(b).unwrap().len();
+            let a = std::fs::metadata(a)
+                .expect("failed to read file info")
+                .len();
+            let b = std::fs::metadata(b)
+                .expect("failed to read file info")
+                .len();
             a.cmp(&b)
         });
         if matches.is_present("reverse") {
@@ -173,14 +242,17 @@ fn main() {
         table.set_titles(row!["file", "size"]);
 
         for file in files {
-            let metadata = std::fs::metadata(file).unwrap();
+            let metadata = std::fs::metadata(file).expect("failed to read file info");
             table.add_row(Row::new(vec![
                 // truncate to terminal width minus the size column
                 Cell::new(&truncate(
                     file,
-                    (term_size::dimensions().unwrap().0 - 20) as i32,
+                    term_size::dimensions()
+                        .expect("failed to get terminal dimensions")
+                        .0
+                        - 20,
                 )),
-                Cell::new(&humanize_bytes(metadata.len() as f64)),
+                Cell::new(&humanize_bytes(metadata.len())),
             ]));
         }
         table.printstd();
@@ -203,114 +275,139 @@ fn main() {
     pb.set_style(
         ProgressStyle::default_bar()
             .template("[{elapsed_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} {msg}")
+            .expect("failed to set progress bar template")
             .progress_chars("##-"),
     );
-    pb.enable_steady_tick(500);
-    let tmp = Builder::new().prefix("decoreco").tempdir().unwrap();
+    pb.enable_steady_tick(Duration::from_millis(100));
+    let tmp = Builder::new()
+        .prefix("decoreco")
+        .tempdir()
+        .expect("failed to maek temp dir");
+    #[allow(clippy::mutex_integer)]
     let saved_size = Arc::new(Mutex::new(0_u64));
+    #[allow(clippy::mutex_integer)]
     let total_size = Arc::new(Mutex::new(0_u64));
 
     // iterates through the files
     files.par_iter().enumerate().for_each(|(i, file)| {
-        let i = i.to_string() + "." + file.split('.').last().unwrap();
+        let i = i.to_string() + "." + file.split('.').last().expect("no file ext");
 
-        if res.status.success() {
-            // check if file is bigger than the original
-            let orig_file_size = Command::new("stat")
-                .arg("--printf=%s")
-                .arg(file)
-                .output()
-                .unwrap();
-
-            let orig_file_size: u64 = String::from_utf8(orig_file_size.stdout)
-                .unwrap()
+        match decoreco(&matches, &tmp, &i, file) {
+            Ok(()) => {
+                let new_path = tmp
+                    .path()
+                    .join(i.clone())
+                    .to_str()
+                    .expect("failed to get new path")
+                    .to_string();
+                // check if file is bigger than the original
+                let orig_file_size: u64 = String::from_utf8(
+                    Command::new("stat")
+                        .arg("--printf=%s")
+                        .arg(file)
+                        .output()
+                        .expect("failed to read size")
+                        .stdout,
+                )
+                .expect("failed to parse size into utf-8")
                 .trim()
                 .parse()
-                .unwrap();
+                .expect("failed to parse size as u64");
 
-            let new_file_size = Command::new("stat")
-                .arg("--printf=%s")
-                .arg(tmp.path().join(i.clone()).to_str().unwrap())
-                .output()
-                .unwrap();
-            let new_file_size: u64 = String::from_utf8(new_file_size.stdout)
-                .unwrap()
-                .trim()
-                .parse()
-                .unwrap();
-            // println!("old: {}, new: {}", orig_file_size, new_file_size);
-            pb.inc(1);
-
-            if new_file_size < orig_file_size {
-                pb.set_message(format!(
-                    "{} {}",
-                    format!(
-                        "file is {}% smaller than original",
-                        100 - (new_file_size * 100) / orig_file_size
-                    )
-                    .green(),
-                    file
-                ));
-                let mut save = saved_size.lock().unwrap();
-                *save += orig_file_size - new_file_size;
-                let mut total = total_size.lock().unwrap();
-                *total += orig_file_size;
-                // move the file to the original location if it's not a dry run
-                if !matches.is_present("dry-run") {
-                    Command::new("mv")
-                        .arg(tmp.path().join(i.clone()).to_str().unwrap())
+                let new_file_size: u64 = String::from_utf8(
+                    Command::new("stat")
+                        .arg("--printf=%s")
                         .arg(
-                            // if it's an img make sure to add the img ext
-                            if matches.is_present("images") {
-                                format!("{}.jxl", file)
-                            } else {
-                                file.to_string()
-                            },
+                            tmp.path()
+                                .join(i.clone())
+                                .to_str()
+                                .expect("failed to get path of tmpdir"),
                         )
                         .output()
-                        .unwrap();
-                    if matches.is_present("images") {
-                        Command::new("rm").arg(file).output().unwrap();
+                        .expect("failed to read size")
+                        .stdout,
+                )
+                .expect("failed to parse size into utf-8")
+                .trim()
+                .parse()
+                .expect("failed to parse size as u64");
+                pb.inc(1);
+
+                if new_file_size < orig_file_size {
+                    pb.set_message(format!(
+                        "{} {}",
+                        format!(
+                            "smaller by {}% ",
+                            100 - (new_file_size * 100) / orig_file_size
+                        )
+                        .green(),
+                        file
+                    ));
+                    *(saved_size.lock().expect("poisoned")) += orig_file_size - new_file_size;
+                    *(total_size.lock().expect("poisoned")) += orig_file_size;
+                    // move the file to the original location if it's not a dry run
+                    if !matches.is_present("dry-run") {
+                        Command::new("mv")
+                            .arg(new_path)
+                            .arg(
+                                // if it's an img make sure to add the img ext
+                                if matches.is_present("images") {
+                                    format!("{}.jxl", file)
+                                } else {
+                                    (*file).to_string()
+                                },
+                            )
+                            .output()
+                            .expect("failed to add extension");
+                        if matches.is_present("images") {
+                            Command::new("rm")
+                                .arg(file)
+                                .output()
+                                .expect("failed to remove old file");
+                        }
                     }
+                    // add the file to the list of processed files
+                    let mut processed = shared_processed.lock().expect("poisoned");
+
+                    processed.push(((*file).to_string(), orig_file_size, new_file_size));
+                } else {
+                    pb.set_message(format!(
+                        "{} {}",
+                        format!(" larger by {}% ", (orig_file_size * 100) / new_file_size).red(),
+                        file
+                    ));
                 }
-                // add the file to the list of processed files
-                let mut processed = shared_processed.lock().unwrap();
 
-                processed.push(((*file).to_string(), orig_file_size, new_file_size));
-            } else {
-                println!("{} {}", orig_file_size, new_file_size);
-                pb.set_message(format!(
-                    "{} {}",
-                    format!(
-                        "file is {}% larger than original",
-                        (orig_file_size * 100) / new_file_size
-                    )
-                    .red(),
-                    file
-                ));
+                // updates the progress bar
             }
-
-            // updates the progress bar
-        } else {
-            println!("{}", String::from_utf8(res.stderr).unwrap());
+            Err(str) => {
+                let thing = format!("failed to decoreco: {str}").red();
+                pb.inc(1);
+                println!("{thing}");
+            }
         }
     });
 
     // finishes the progress bar
     pb.finish_and_clear();
     // print finished in rainbows
-    println!("{}", "finished!".green().bold().on_blue().underline());
+    println!("done.");
+
+    println!(
+        "{}",
+        { "-".repeat(term_size::dimensions().expect("failed to get term size").0) }.bold()
+    );
 
     // if saved_size == 0 {
-    let saved_size = *saved_size.lock().unwrap();
-    let total_size = *total_size.lock().unwrap();
+    let saved_size = *saved_size.lock().expect("poisoned");
+    let total_size = *total_size.lock().expect("poisoned");
     if saved_size == 0 {
         println!("no files were compressed.");
     } else {
         // print the total size saved
         println!(
             "total size saved: {} ({}% of original)",
-            humanize_bytes(saved_size as f64),
+            humanize_bytes(saved_size),
             (saved_size * 100) / total_size
         );
         // print the files that were compressed
@@ -318,118 +415,155 @@ fn main() {
         let mut table = Table::new();
         table.set_format(*prettytable::format::consts::FORMAT_BOX_CHARS);
         table.set_titles(row!["file", "old size", "new size", "saved size"]);
-        let processed = shared_processed.lock().unwrap();
-        for (file, old_size, new_size) in processed.clone() {
+        let processed = shared_processed.lock().expect("poisoned").clone();
+        for (file, old_size, new_size) in processed {
             table.add_row(Row::new(vec![
                 Cell::new(&truncate(
                     &file,
-                    (term_size::dimensions().unwrap().0 - 60) as i32,
+                    term_size::dimensions().expect("failed to get term size").0 - 60,
                 )),
-                Cell::new(&humanize_bytes(old_size as f64)).style_spec("br"),
-                Cell::new(&humanize_bytes(new_size as f64)).style_spec("br"),
-                Cell::new(&humanize_bytes(old_size as f64 - new_size as f64)).style_spec("br"),
+                Cell::new(&humanize_bytes(old_size)).style_spec("br"),
+                Cell::new(&humanize_bytes(new_size)).style_spec("br"),
+                Cell::new(&humanize_bytes(old_size - new_size)).style_spec("br"),
             ]));
         }
 
         table.set_format(*prettytable::format::consts::FORMAT_BOX_CHARS);
-        // add a separator row
-        table.add_row(Row::new(vec![
-            Cell::new(""),
-            Cell::new(""),
-            Cell::new(""),
-            Cell::new(""),
-        ]));
 
         // add total size saved
         table.add_row(Row::new(vec![
-            Cell::new("total"),
-            Cell::new(&humanize_bytes(total_size as f64)).style_spec("Frr"),
-            Cell::new(&humanize_bytes((total_size - saved_size) as f64)).style_spec("Fgr"),
-            Cell::new(&humanize_bytes(saved_size as f64)).style_spec("Fbr"),
+            Cell::new("total").style_spec("Fb"),
+            Cell::new(&humanize_bytes(total_size)).style_spec("Frr"),
+            Cell::new(&humanize_bytes(total_size - saved_size)).style_spec("Fgr"),
+            Cell::new(&humanize_bytes(saved_size)).style_spec("Fbr"),
         ]));
 
         table.printstd();
 
         // print time elapsed
         let elapsed = start.elapsed();
-        println!("{} {}", elapsed.as_millis(), total_size);
         println!(
             "took {} total, on average {} per MB",
-            format!(
-                "{}:{:02}:{:02}",
-                (elapsed.as_millis() / 1000) / 3600,
-                ((elapsed.as_millis() / 1000) / 60) % 60,
-                (elapsed.as_millis() / 1000) % 60
-            )
-            .green(),
-            format!(
-                "{:02}:{:02}:{:02}",
-                (((elapsed.as_millis() as f64 / 1000.0).floor())
-                    / (total_size as f64 / 1_000_000.0)
-                    / 3600.0)
-                    .floor(),
-                ((elapsed.as_millis() as f64 / 1000.0).floor()
-                    / (total_size as f64 / 1_000_000.0)
-                    / 60.0)
-                    .floor() as u128
-                    % 60,
-                ((elapsed.as_millis() as f64 / 1000.0).floor() / (total_size as f64 / 1_000_000.0))
-                    .floor() as u128
-                    % 60
-            )
-            .green(),
+            time_human(elapsed.as_millis()).green(),
+            time_human(elapsed.as_millis() / (u128::from(total_size).div_ceil(1_000_000))).green(),
         );
     }
     // delete tempdir
-    tmp.close().unwrap();
+    tmp.close().expect("failed to remove tempdir");
 }
 
-fn video(
-    file: &&str,
+/// Transcodes/recompresses a file using the given options.
+///
+/// # Arguments
+///
+/// * `matches` - The `ArgMatches` struct from clap.
+/// * `tmp` - A `TempDir` to store the new file in.
+/// * `i` - The index of the file.
+/// * `file` - The path to the file.
+///
+/// # Returns
+///
+/// * `Ok(())` if the command succeeds.
+/// * `Err(String)` if the command fails, with the error message.
+///
+/// # Panics
+///
+/// Panics if the command fails.
+fn decoreco(
     matches: &clap::ArgMatches<'_>,
     tmp: &tempfile::TempDir,
-    i: &String,
-) -> std::process::Output {
-    Command::new("ffmpeg")
-        .arg("-i")
-        .arg(file)
-        .arg("-c:v")
-        .arg(matches.value_of("video-codec").unwrap())
-        .arg("-c:a")
-        .arg("copy")
-        // keep subs
-        .arg("-c:s")
-        .arg("copy")
-        // keep metadata
-        .arg("-map_metadata")
-        .arg("0")
-        .arg("-y")
-        .arg(tmp.path().join(i.clone()).to_str().unwrap())
-        .output()
-        .unwrap()
+    i: &str,
+    file: &str,
+) -> Result<(), String> {
+    let binding = tmp.path().join(i);
+    let arg = binding.to_str().expect("failed to get path");
+
+    let res = if matches.is_present("images") {
+        let losslessimg = // extract extension and then use match
+                    match file.split('.').last().expect("no extension?") {
+                        "png" => true,
+                        "jpg" | "jpeg" => false,
+                        // "avif" => Command::new(program)
+                        _ => {
+                            return Err(format!("{file} is not a supported image format"));
+                        }
+                    };
+        let mut cmd = Command::new("cjxl");
+        let cmd: &mut Command = if losslessimg {
+            cmd.arg("-d").arg("0")
+        } else {
+            &mut cmd
+        };
+        match cmd.arg(file).arg(arg).output() {
+            Ok(it) => it,
+            Err(err) => return Err(err.to_string()),
+        }
+    } else {
+        match Command::new("ffmpeg")
+            .arg("-i")
+            .arg(file)
+            .arg("-c:v")
+            .arg(matches.value_of("video-codec").expect("no video codec"))
+            .arg("-c:a")
+            .arg(matches.value_of("audio-codec").expect("no audio codec"))
+            // keep subs
+            .arg("-c:s")
+            .arg("copy")
+            // keep metadata
+            .arg("-map_metadata")
+            .arg("0")
+            .arg("-y")
+            .arg(arg)
+            .output()
+        {
+            Ok(it) => it,
+            Err(err) => return Err(err.to_string()),
+        }
+    };
+
+    if !res.status.success() {
+        // return path of faulty file and stderr
+        return Err(format!(
+            "{}\n{}\n",
+            file,
+            String::from_utf8(res.stderr).expect("failed to convert error to UTF-8")
+        ));
+    }
+    Ok(())
 }
 
-fn audio(
-    file: &&str,
-    matches: &clap::ArgMatches<'_>,
-    tmp: &tempfile::TempDir,
-    i: &String,
-) -> std::process::Output {
-    Command::new("ffmpeg")
-        .arg("-i")
-        .arg(file)
-        .arg("-c:a")
-        .arg(matches.value_of("audio-codec").unwrap())
-        .arg("-c:v")
-        .arg("copy")
-        // keep subs
-        .arg("-c:s")
-        .arg("copy")
-        // keep metadata
-        .arg("-map_metadata")
-        .arg("0")
-        .arg("-y")
-        .arg(tmp.path().join(i.clone()).to_str().unwrap())
-        .output()
-        .unwrap()
+/// Converts a duration in milliseconds to a human-readable string.
+///
+/// # Arguments
+///
+/// * `t` - The duration in milliseconds.
+///
+/// # Returns
+///
+/// A string representing the duration in a human-readable format. If
+/// it's less than 1 second then only milliseconds are used, otherwise
+/// the format uses only minutes, hours, and seconds, and omits any
+/// that are equal to zero.
+fn time_human(t: u128) -> String {
+    if t < 1000 {
+        return format!("{t}ms");
+    }
+    let mut t = t / 1000;
+    let s = t % 60;
+    t /= 60;
+    let m = t % 60;
+    t /= 60;
+    let h = t % 60;
+
+    let mut res = String::new();
+    if h != 0 {
+        res += &format!("{h}h");
+    }
+    if m != 0 {
+        res += &format!("{m}m");
+    }
+    if s != 0 {
+        res += &format!("{s}s");
+    }
+    res
 }

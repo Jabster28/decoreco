@@ -136,7 +136,15 @@ Please contribute a guide for your favorite shell! "
                 .short("t")
                 .long("threads")
                 .takes_value(true)
-                .help("number of threads to use. default is zero, which means max")
+                .validator(|e| {
+                    let res: Result<usize, _> = e.parse();
+                    match res {
+                        Ok(_) => Ok(()),
+                        Err(_) => Err("not a usize".to_string()),
+                    }
+
+                })
+                .help("number of threads to use. default is max for images, and one for videos")
                 .default_value("0"))
 }
 
@@ -229,9 +237,13 @@ pub fn man() {
                 .paragraph("HEVC (also known as H.265) isn't supported by many web browsers or operating systems at the moment, and as such some videos might not play after you re-encode them. This codec should only be used if you don't plan on sharing the files over the internet without transcoding them (like using a media server such as plex or emby), or unless you're confident that your software and hardware can play it.").paragraph("Encoding HEVC also takes quite a bit longer thn h264, due to the higher compression ratio.")
         );
     // save to a tempdir
-    let tempdir = Builder::new().prefix("decoreco").tempdir().unwrap();
+    let tempdir = Builder::new()
+        .prefix("decoreco")
+        .tempdir()
+        .expect("failed to create temp dir. are the permissions correct?");
     let manpage = tempdir.path().join("decoreco.1");
-    let mut file = std::fs::File::create(&manpage).unwrap();
+    let mut file = std::fs::File::create(&manpage)
+        .expect("failed to save man page to tempdir. are the permissions correct?");
     std::io::Write::write_all(&mut file, page.render().as_bytes())
         .and_then(|()| {
             Command::new("man").arg(manpage).status().map(|status| {
@@ -242,6 +254,6 @@ pub fn man() {
                 }
             })
         })
-        .unwrap()
-        .unwrap();
+        .expect("failed to run the `man` command. is it in your path?")
+        .expect("failed to write file to disk");
 }
