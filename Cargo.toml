@@ -15,7 +15,7 @@ categories = ["multimedia"]
 [dependencies]
 clap = "2.33.3"
 colored = "2.0.0"
-indicatif = "0.17.7"
+indicatif = "0.17.8"
 prettytable-rs = "0.10.0"
 tempfile = "3.2.0"
 term_size = "0.3.2"
