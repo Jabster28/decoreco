@@ -1,9 +1,11 @@
 #![forbid(unsafe_code)]
+use log::*;
 
+pub mod errors;
 use clap::Shell;
-use colored::Colorize;
+use owo_colors::OwoColorize;
+use errors::DecorecoError;
 use indicatif::{ProgressBar, ProgressStyle};
-
 use prettytable::{row, Cell, Row, Table};
 use rayon::prelude::*;
 use std::{
@@ -12,6 +14,7 @@ use std::{
     time::Duration,
 };
 use tempfile::Builder;
+
 
 mod cli;
 
@@ -85,9 +88,106 @@ fn humanize_bytes<
     format!("{bytes} {unit}")
 }
 
+fn command_version_line(program: &str, args: &[&str]) -> Option<String> {
+    let output = Command::new(program).args(args).output().ok()?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let line = stdout
+        .lines()
+        .chain(stderr.lines())
+        .find(|line| !line.trim().is_empty())?
+        .trim()
+        .to_string();
+    Some(line)
+}
+
+fn print_version_info() {
+    info!("decoreco v{}", env!("CARGO_PKG_VERSION").green());
+
+    match command_version_line("cjxl", &["--version"]) {
+        Some(line) => info!("cjxl {}", line.split_once(' ').expect("cjxl version line doesn't contain a space").1.green()),
+        None => {
+            warn!("cjxl not found");
+            debug!("if you wanna compress images, you'll need to install libjxl")
+        }
+    }
+
+    if let Some(line) = command_version_line("ffmpeg", &[])
+    {
+        // ffmpeg version 5.1.8-0+deb12u1 Copyright (c) 2000-2025 the FFmpeg developers
+        let version = line
+            .split_whitespace()
+            .nth(2)
+            .expect("failed to parse ffmpeg version");
+        info!("ffmpeg {}", version.green());
+    }
+}
+use std::io::Write;
+
+
+
+
+
+macro_rules! success {
+    ($($arg:tt)*) => {
+        // so prepend w square (▫) and make it green
+        let x = "■".green();
+        println!("{x}  {}", format!($($arg)*).green());
+    };
+}
+
+
 fn main() {
-    // truncation function and add ellipsis
-    // let truncate =
+    env_logger::builder()
+        .filter_level(log::LevelFilter::Debug)
+        .format_timestamp(None)
+            .format(|buf, record| {
+                // desc then examples
+                // info is for stuff happening and progresses, i don't need a "success" log level
+                // might make a macro for it tho
+                // debug is for small happenings
+                // warn is for stuff that might be a problem but isn't necessarily one
+                // such as a missing dependency, or a folder that can't be read
+                // error is for stuff that definitely is a problem, such as a failed command or an invalid file
+                
+                // style wise i want a fancy shape thing. examples:
+                /*
+
+
+                ◆  Compressing 1,200 images
+                ▸  Checking cjxl exists...
+                ■  Metadata synced.  [this'd be the success macro probs]
+                ▲  3 images have missing EXIF data. 
+                ▼ Failed to read file 'video.mp4': Permission denied
+
+                */
+                
+                // and the shapes would be colored, so the diamond is blue,
+                // the arrow is cyan, the square is green, the triangle pointing up is yellow, and the triangle pointing down is red
+
+
+                // and for text, debug and below are dimmed, warn and above have their color
+                let shape = match record.level() {
+                    log::Level::Error => "▼".red().to_string(),
+                    log::Level::Warn => "▲".yellow().to_string(),
+                    log::Level::Info => "▶".blue().to_string(),
+                    log::Level::Debug => "◆".cyan().to_string(),
+                    log::Level::Trace => " ".to_string(),
+                };
+
+                let msg = match record.level() {
+                    log::Level::Error => record.args().to_string().red().to_string(),
+                    log::Level::Warn => record.args().to_string().yellow().to_string(),
+                    log::Level::Info => record.args().to_string(),
+                    log::Level::Debug => record.args().to_string().dimmed().to_string(),
+                    log::Level::Trace => todo!(),
+                };
+                writeln!(buf, "{}  {}", shape, msg)
+
+
+    })
+
+        .init();
 
     let app = cli::cli();
     let matches = app.clone().get_matches();
@@ -107,6 +207,11 @@ fn main() {
             },
             &mut std::io::stdout(),
         );
+        return;
+    }
+
+    if matches.is_present("version") {
+        print_version_info();
         return;
     }
 
@@ -141,7 +246,7 @@ fn main() {
     } else if matches.is_present("path") {
         let check_path = matches.value_of("path").expect("path arg was empty");
         // searches for media files in the given path
-        println!("searching for media files in {check_path}");
+        info!("searching for media files in {check_path}");
         let mut cmd = Command::new("find");
         let cmd = cmd
             .arg(check_path)
@@ -201,7 +306,7 @@ fn main() {
 
     // exits if there are no files to process
     if files.is_empty() {
-        println!("no files found!");
+        success!("no files found!");
         return;
     }
     // remove empty strings from the list of files
@@ -211,12 +316,12 @@ fn main() {
     files.retain(|x| match std::fs::metadata(x) {
         Ok(e) => e.len() != 0,
         Err(err) => {
-            println!("{}", format!("failed to read file '{x}': {err}").red());
+            error!("{}", format!("failed to read file '{x}': {err}").red());
             false
         }
     });
-    println!(
-        "found {} file{}!",
+    success!(
+        "found {} file{}",
         files.len(),
         if files.len() == 1 { "" } else { "s" }
     );
@@ -266,7 +371,7 @@ fn main() {
 
     // let user know if dry run is enabled
     if matches.is_present("dry-run") {
-        println!("dry run enabled, no files will be modified.");
+        debug!("dry run enabled, no files will be modified.");
     }
     // starts a timer
     let start = std::time::Instant::now();
@@ -382,17 +487,15 @@ fn main() {
                 // updates the progress bar
             }
             Err(str) => {
-                let thing = format!("failed to decoreco: {str}").red();
                 pb.inc(1);
-                println!("{thing}");
+                error!("failed to decoreco {file}\n{str}");
             }
         }
     });
 
     // finishes the progress bar
     pb.finish_and_clear();
-    // print finished in rainbows
-    println!("done.");
+    success!("done.");
 
     println!(
         "{}",
@@ -403,7 +506,7 @@ fn main() {
     let saved_size = *saved_size.lock().expect("poisoned");
     let total_size = *total_size.lock().expect("poisoned");
     if saved_size == 0 {
-        println!("no files were compressed.");
+        debug!("no files were compressed.");
     } else {
         // print the total size saved
         println!(
@@ -478,18 +581,22 @@ fn decoreco(
     tmp: &tempfile::TempDir,
     i: &str,
     file: &str,
-) -> Result<(), String> {
+) -> Result<(), DecorecoError> {
     let binding = tmp.path().join(i);
     let arg = binding.to_str().expect("failed to get path");
 
     let res = if matches.is_present("images") {
+        let ext = file.split('.').last().expect("no extension?");
         let losslessimg = // extract extension and then use match
-                    match file.split('.').last().expect("no extension?") {
+        match
+        ext
+         {
+
                         "png" => true,
                         "jpg" | "jpeg" => false,
                         // "avif" => Command::new(program)
                         _ => {
-                            return Err(format!("{file} is not a supported image format"));
+                            return Err(DecorecoError::ExtensionNotSupported(ext.to_string()))
                         }
                     };
         let mut cmd = Command::new("cjxl");
@@ -500,7 +607,12 @@ fn decoreco(
         };
         match cmd.arg(file).arg(arg).output() {
             Ok(it) => it,
-            Err(err) => return Err(err.to_string()),
+            Err(err) => {
+                return Err(DecorecoError::CommandFailed(
+                    cmd.get_program().to_str().expect("valid str").to_string(),
+                    err.to_string(),
+                ))
+            }
         }
     } else {
         match Command::new("ffmpeg")
@@ -521,16 +633,19 @@ fn decoreco(
             .output()
         {
             Ok(it) => it,
-            Err(err) => return Err(err.to_string()),
+            Err(err) => {
+                return Err(DecorecoError::CommandFailed(
+                    String::from("ffmpeg"),
+                    err.to_string(),
+                ))
+            }
         }
     };
 
     if !res.status.success() {
         // return path of faulty file and stderr
-        return Err(format!(
-            "{}\n{}\n",
-            file,
-            String::from_utf8(res.stderr).expect("failed to convert error to UTF-8")
+        return Err(DecorecoError::NoSuccessCode(
+            String::from_utf8(res.stderr).expect("should be a valid str"),
         ));
     }
     Ok(())

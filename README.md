@@ -9,7 +9,7 @@ decode and re-encode big media files to save space
 decoreco ~/Downloads
 
 # re-encode all video files in your downloads folder to hevc and mp3
-decoreco -v hevc -a mp3 ~/Downloads
+decoreco -c hevc -a mp3 ~/Downloads
 
 # list all video files in your home folder and sort them by size
 decoreco -l -s ~/
