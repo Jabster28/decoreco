@@ -11,7 +11,12 @@ pub fn cli() -> App<'static, 'static> {
         .setting(clap::AppSettings::InferSubcommands)
         .setting(clap::AppSettings::ColoredHelp)
         .setting(clap::AppSettings::UnifiedHelpMessage)
-        .version("1.0.0")
+        .arg(
+            Arg::with_name("version")
+                .short("v")
+                .long("version")
+                .help("print version information and exit"),
+        )
         .author("Jabster28 <justynboyer@gmail.com>").subcommand(
                     SubCommand::with_name("completions")
                 .about("Generate tab-completion scripts for your shell")
@@ -104,7 +109,7 @@ Please contribute a guide for your favorite shell! "
         // add a video codec option
         .arg(
             Arg::with_name("video-codec")
-                .short("v")
+                .short("c")
                 .long("video-codec")
                 .takes_value(true)
                 .help("video codec to use")
@@ -197,7 +202,7 @@ pub fn man() {
         // and a video codec option
         .option(
             Opt::new("video-codec")
-                .short("v")
+                .short("c")
                 .long("video-codec")
                 .help("set the video codec to use. see CODECS for more info")
                 .default_value("h264"),
@@ -218,7 +223,7 @@ pub fn man() {
         .example(
             Example::new()
                 .text("re-encode all video files in your downloads folder to hevc and mp3")
-                .command("decoreco -v hevc -a mp3 ~/Downloads"),
+                .command("decoreco -c hevc -a mp3 ~/Downloads"),
         )
         .example(
             Example::new()
@@ -230,7 +235,7 @@ pub fn man() {
                 .text("perform a dry run of converting your movies folder to avi")
                 .command("decoreco -d -v avi ~/Movies"),
         )
-                .custom(
+        .custom(
             Section::new("codecs")
                 .paragraph("the following codecs are supported in order of general size while retaining quality, smallest to largest:")
                 .paragraph("(video) hevc, vp9, [h264], , vp8").paragraph("(audio) [aac], opus, vorbis, mp3")
